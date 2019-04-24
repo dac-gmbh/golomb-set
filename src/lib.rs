@@ -100,9 +100,9 @@ impl<D: Digest> GcsBuilder<D> {
     }
 
     /// Adds an entry to the set, and returns an error if more than N items are added
-    pub fn insert(&mut self, input: &[u8]) -> Result<()> {
+    pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Result<()> {
         if (self.values.len() as u64) < self.n {
-            self.values.push(digest_value::<D>(self.n, self.p, input));
+            self.values.push(digest_value::<D>(self.n, self.p, input.as_ref()));
             Ok(())
         } else {
             Err(GcsError::LimitReached.into())
