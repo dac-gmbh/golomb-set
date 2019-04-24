@@ -40,7 +40,7 @@ use {
     byteorder::ByteOrder,
     digest::Digest,
     num_integer::div_rem,
-    std::marker::PhantomData,
+    std::{io::Read, marker::PhantomData},
 };
 
 type Result<T> = std::result::Result<T, failure::Error>;
@@ -70,6 +70,33 @@ impl<D: Digest> GcsBuilder<D> {
             values: Vec::new(),
             digest: PhantomData,
         }
+    }
+
+    /// Copies data from the reader and inserts into into the set.
+    /// # Errors
+    /// * If there is an error reading data from `reader`.
+    /// * If more than `n` items have been inserted.
+    /// ```no_run
+    /// use std::{fs::{self, File}, io::Read};
+    ///
+    /// use golomb_set::GcsBuilder;
+    /// use sha1::Sha1;
+    ///
+    /// let path = "src/lib.rs";
+    ///
+    /// let mut builder = GcsBuilder::<Sha1>::new(3, 5);
+    /// builder.insert_from_reader(File::open(path)?);
+    ///
+    /// let gcs = builder.build();
+    ///
+    /// assert!(gcs.contains(&fs::read(path)?));
+    ///
+    ///# Ok::<_, std::io::Error>(())
+    /// ```
+    pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Result<()> {
+        let mut vec = Vec::new();
+        reader.read(&mut vec)?;
+        self.insert(&vec)
     }
 
     /// Adds an entry to the set, and returns an error if more than N items are added
