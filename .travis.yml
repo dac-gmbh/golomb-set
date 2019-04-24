@@ -1,0 +1,19 @@
+language: rust
+rust:
+  - stable
+  - nightly
+matrix:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
+sudo: false
+env:
+  global:
+    - RUSTFLAGS="--deny warnings"
+    - RUST_BACKTRACE=1
+script:
+  - cargo test
+  - cargo test --benches -- --test
+notifications:
+  email:
+    on_success: never
