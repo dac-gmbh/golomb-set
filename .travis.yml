@@ -12,6 +12,8 @@ env:
     - RUSTFLAGS="--deny warnings"
     - RUST_BACKTRACE=1
 script:
+  - rustup component add rustfmt
+  - cargo fmt --all -- --check
   - cargo test
   - cargo test --benches -- --test
 notifications:
