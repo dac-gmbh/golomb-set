@@ -39,11 +39,10 @@ use {
     bitvec::{BitVec, Bits},
     byteorder::ByteOrder,
     digest::Digest,
+    failure::Fallible,
     num_integer::div_rem,
     std::{io::Read, marker::PhantomData},
 };
-
-type Result<T> = std::result::Result<T, failure::Error>;
 
 #[derive(Debug, Fail)]
 enum GcsError {
@@ -93,16 +92,17 @@ impl<D: Digest> GcsBuilder<D> {
     ///
     ///# Ok::<_, std::io::Error>(())
     /// ```
-    pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Result<()> {
+    pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Fallible<()> {
         let mut vec = Vec::new();
-        reader.read(&mut vec)?;
+        reader.read_exact(&mut vec)?;
         self.insert(&vec)
     }
 
     /// Adds an entry to the set, and returns an error if more than N items are added
-    pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Result<()> {
+    pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Fallible<()> {
         if (self.values.len() as u64) < self.n {
-            self.values.push(digest_value::<D>(self.n, self.p, input.as_ref()));
+            self.values
+                .push(digest_value::<D>(self.n, self.p, input.as_ref()));
             Ok(())
         } else {
             Err(GcsError::LimitReached.into())

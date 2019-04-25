@@ -4,13 +4,14 @@ extern crate criterion;
 use {
     criterion::Criterion,
     golomb_set::GcsBuilder,
-    rand::{rngs::SmallRng, FromEntropy, RngCore},
+    rand_core::{RngCore, SeedableRng},
+    rand_xorshift::XorShiftRng,
     sha1::Sha1,
 };
 
 fn builder_fill(n: u64, p: u8) -> GcsBuilder<Sha1> {
     let mut builder = GcsBuilder::new(n, p);
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = XorShiftRng::seed_from_u64(0);
 
     for _ in 0..n {
         let mut buf = [0u8; 128];
