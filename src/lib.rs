@@ -142,7 +142,7 @@ impl<D: Digest> GcsBuilder<D> {
 pub struct Gcs<D: Digest> {
     n: u64,
     p: u8,
-    bits: BitVec,
+    values: Vec<u64>,
     digest: PhantomData<D>,
 }
 
@@ -151,10 +151,16 @@ impl<D: Digest> Gcs<D> {
     /// where n is the number of items the GCS was defined with and 1/2^p is
     /// the probability of a false positive
     pub fn new(n: u64, p: u8, bits: BitVec) -> Self {
+        let mut values = golomb_decode(bits.iter().peekable(), p);
+
+        for i in 1..values.len() {
+            values[i] += values[i - 1];
+        }
+
         Gcs {
             n,
             p,
-            bits,
+            values,
             digest: PhantomData,
         }
     }
@@ -162,23 +168,35 @@ impl<D: Digest> Gcs<D> {
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
     pub fn contains(&self, input: &[u8]) -> bool {
-        let mut values = golomb_decode(self.bits.clone().iter().peekable(), self.p);
-
-        for i in 1..values.len() {
-            values[i] += values[i - 1];
-        }
-
-        values.contains(&digest_value::<D>(self.n, self.p, input))
+        self.values
+            .binary_search(&digest_value::<D>(self.n, self.p, input))
+            .is_ok()
     }
 
     /// Get the raw data bytes from a GCS
-    pub fn as_bits(&self) -> &BitVec {
-        &self.bits
+    pub fn as_bits(&self) -> BitVec {
+        let mut out = BitVec::new();
+
+        // Sort then calculate differences
+        let mut values = self.values.clone();
+        values.sort();
+        for i in (1..values.len()).rev() {
+            values[i] -= values[i - 1];
+        }
+
+        // Apply golomb encoding
+        let mut bits = BitVec::<BigEndian>::new();
+        for val in values {
+            bits.append(&mut golomb_encode(val, self.p))
+        }
+        out.append(&mut bits);
+
+        out
     }
 
     /// Get the raw values encoded in the BitVec
     pub fn values(&self) -> Vec<u64> {
-        golomb_decode(self.bits.clone().iter().peekable(), self.p)
+        self.values.clone()
     }
 }
 
