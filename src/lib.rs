@@ -36,7 +36,10 @@
 extern crate failure_derive;
 
 use {
-    bitvec::{BitVec, Bits},
+    bitvec::{
+        prelude::{BigEndian, BitVec, LittleEndian},
+        store::BitStore,
+    },
     byteorder::ByteOrder,
     digest::Digest,
     failure::Fallible,
@@ -125,7 +128,7 @@ impl<D: Digest> GcsBuilder<D> {
         }
 
         // Apply golomb encoding
-        let mut bits = BitVec::<bitvec::BigEndian>::new();
+        let mut bits = BitVec::<BigEndian>::new();
         for val in self.values {
             bits.append(&mut golomb_encode(val, self.p))
         }
@@ -201,7 +204,7 @@ fn golomb_encode(n: u64, p: u8) -> BitVec {
     // Binary encoding of remainder in p bits
     // remove vec and change to big end?
     for i in (0..p).rev() {
-        out.push(rem.get::<bitvec::LittleEndian>(i.into()));
+        out.push(rem.get::<LittleEndian>(i.into()));
     }
 
     out
