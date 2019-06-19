@@ -4,14 +4,15 @@ extern crate criterion;
 use {
     criterion::Criterion,
     golomb_set::GcsBuilder,
-    rand::{rngs::SmallRng, FromEntropy, RngCore},
+    rand_core::{RngCore, SeedableRng},
+    rand_xorshift::XorShiftRng,
     sha1::Sha1,
 };
 
 fn contains(c: &mut Criterion) {
     let gcs = {
         let mut builder = GcsBuilder::<Sha1>::new(8000, 6);
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = XorShiftRng::seed_from_u64(0);
 
         for _ in 0..8000 {
             let mut buf = [0u8; 128];

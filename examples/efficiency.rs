@@ -1,15 +1,15 @@
 use {
     golomb_set::GcsBuilder,
     md5::Md5,
-    rand::prng::XorShiftRng,
-    rand::{RngCore, SeedableRng},
+    rand_core::{RngCore, SeedableRng},
+    rand_xorshift::XorShiftRng,
 };
 
 const NUM_ITEMS: usize = 1000;
 const E: f64 = 2.718282;
 
 fn main() {
-    let mut prng = XorShiftRng::from_seed([0u8; 16]);
+    let mut prng = XorShiftRng::seed_from_u64(0);
 
     let mut elements = Vec::<[u8; 32]>::with_capacity(NUM_ITEMS);
     for _ in 0..1000 {
@@ -28,7 +28,6 @@ fn main() {
             (NUM_ITEMS as f64 * E.log2() * p.log2()) as u32 / 8
         );
     }
-
 
     // GCS
     {
