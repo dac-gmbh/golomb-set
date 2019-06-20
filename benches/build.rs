@@ -6,10 +6,10 @@ use {
     golomb_set::GcsBuilder,
     rand_core::{RngCore, SeedableRng},
     rand_xorshift::XorShiftRng,
-    sha1::Sha1,
+    twox_hash::XxHash,
 };
 
-fn builder_fill(n: u64, p: u8) -> GcsBuilder<Sha1> {
+fn builder_fill(n: u64, p: u8) -> GcsBuilder<XxHash> {
     let mut builder = GcsBuilder::new(n, p);
     let mut rng = XorShiftRng::seed_from_u64(0);
 
@@ -31,15 +31,6 @@ fn benchmark_1(c: &mut Criterion) {
     });
 }
 
-fn benchmark_10(c: &mut Criterion) {
-    let builder = builder_fill(10, 6);
-
-    c.bench_function("build 10", move |b| {
-        // Cloning isn't ideal, need to figure out how to only measure .build()
-        b.iter(|| builder.clone().build())
-    });
-}
-
 fn benchmark_100(c: &mut Criterion) {
     let builder = builder_fill(100, 6);
 
@@ -49,5 +40,5 @@ fn benchmark_100(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, benchmark_1, benchmark_10, benchmark_100);
+criterion_group!(benches, benchmark_1, benchmark_100);
 criterion_main!(benches);
