@@ -6,11 +6,11 @@ use {
     golomb_set::GcsBuilder,
     rand_core::{RngCore, SeedableRng},
     rand_xorshift::XorShiftRng,
-    sha1::Sha1,
+    twox_hash::XxHash,
 };
 
 fn insert(c: &mut Criterion) {
-    let mut builder = GcsBuilder::<Sha1>::new(1000, 8);
+    let mut builder = GcsBuilder::<XxHash>::new(1000, 8);
     let mut rng = XorShiftRng::seed_from_u64(0);
 
     c.bench_function("insert", move |b| {

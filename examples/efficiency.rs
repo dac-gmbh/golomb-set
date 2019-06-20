@@ -1,23 +1,14 @@
 use {
     golomb_set::GcsBuilder,
-    md5::Md5,
     rand_core::{RngCore, SeedableRng},
     rand_xorshift::XorShiftRng,
+    twox_hash::XxHash,
 };
 
 const NUM_ITEMS: usize = 1000;
 const E: f64 = 2.718282;
 
 fn main() {
-    let mut prng = XorShiftRng::seed_from_u64(0);
-
-    let mut elements = Vec::<[u8; 32]>::with_capacity(NUM_ITEMS);
-    for _ in 0..1000 {
-        let mut buf = [0u8; 32];
-        prng.fill_bytes(&mut buf);
-        elements.push(buf);
-    }
-
     println!("plain list: {:?} bytes", 1000 * 32);
 
     // Bloom filter
@@ -31,9 +22,12 @@ fn main() {
 
     // GCS
     {
-        let mut gcs = GcsBuilder::<Md5>::new(NUM_ITEMS as u64, 7);
-        for elem in elements {
-            gcs.insert_unchecked(&elem);
+        let mut gcs = GcsBuilder::<XxHash>::new(NUM_ITEMS as u64, 7);
+        let mut prng = XorShiftRng::seed_from_u64(0);
+        for _ in 0..NUM_ITEMS {
+            let mut buf = [0u8; 32];
+            prng.fill_bytes(&mut buf);
+            gcs.insert_unchecked(&buf);
         }
 
         println!("GCS: {:?} bytes", gcs.build().as_bits().len() / 8);
