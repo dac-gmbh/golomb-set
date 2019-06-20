@@ -44,7 +44,10 @@ use {
     digest::Digest,
     failure::Fallible,
     num_integer::div_rem,
-    std::{io::Read, marker::PhantomData},
+    std::{
+        io::{self, Read, Write},
+        marker::PhantomData,
+    },
 };
 
 #[derive(Debug, Fail)]
@@ -55,18 +58,18 @@ enum GcsError {
 
 /// Builder for a GCS
 #[derive(Clone, Debug)]
-pub struct GcsBuilder<D: Digest> {
-    n: u64,
+pub struct UnpackedGcs<D: Digest> {
+    n: usize,
     p: u8,
     values: Vec<u64>,
     digest: PhantomData<D>,
 }
 
-impl<D: Digest> GcsBuilder<D> {
-    /// Creates a new GcsBuilder from n and p, where n is the number of items
-    /// to be stored in the set and 1/2^p is the probability of a false positive
-    pub fn new(n: u64, p: u8) -> Self {
-        GcsBuilder {
+impl<D: Digest> UnpackedGcs<D> {
+    /// Creates a new UnpackedGcs from n and p, where 1/2^p is the probability
+    /// of a false positive when n items have been inserted into the set
+    pub fn new(n: usize, p: u8) -> Self {
+        Self {
             n,
             p,
             values: Vec::new(),
@@ -103,65 +106,12 @@ impl<D: Digest> GcsBuilder<D> {
 
     /// Adds an entry to the set, and returns an error if more than N items are added
     pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Fallible<()> {
-        if (self.values.len() as u64) < self.n {
+        if self.values.len() < self.n {
             self.values
-                .push(digest_value::<D>(self.n, self.p, input.as_ref()));
+                .push(digest_value::<D>(self.n as u64, self.p, input.as_ref()));
             Ok(())
         } else {
             Err(GcsError::LimitReached.into())
-        }
-    }
-
-    /// Adds an entry to the set, does not error if more than N items are added
-    pub fn insert_unchecked(&mut self, input: &[u8]) {
-        self.values.push(digest_value::<D>(self.n, self.p, input));
-    }
-
-    /// Consumes the builder and creates the encoded set
-    pub fn build(mut self) -> Gcs<D> {
-        let mut out = BitVec::new();
-
-        // Sort then calculate differences
-        self.values.sort();
-        for i in (1..self.values.len()).rev() {
-            self.values[i] -= self.values[i - 1];
-        }
-
-        // Apply golomb encoding
-        let mut bits = BitVec::<BigEndian>::new();
-        for val in self.values {
-            bits.append(&mut golomb_encode(val, self.p))
-        }
-        out.append(&mut bits);
-
-        Gcs::<D>::new(self.n, self.p, out)
-    }
-}
-
-/// A Golomb-coded Set
-pub struct Gcs<D: Digest> {
-    n: u64,
-    p: u8,
-    values: Vec<u64>,
-    digest: PhantomData<D>,
-}
-
-impl<D: Digest> Gcs<D> {
-    /// Create a GCS from n, p and a BitVec of the Golomb-Rice encoded values,
-    /// where n is the number of items the GCS was defined with and 1/2^p is
-    /// the probability of a false positive
-    pub fn new(n: u64, p: u8, bits: BitVec) -> Self {
-        let mut values = golomb_decode(bits.iter().peekable(), p);
-
-        for i in 1..values.len() {
-            values[i] += values[i - 1];
-        }
-
-        Gcs {
-            n,
-            p,
-            values,
-            digest: PhantomData,
         }
     }
 
@@ -169,34 +119,88 @@ impl<D: Digest> Gcs<D> {
     /// input is definitely not present, if true the input is probably present
     pub fn contains(&self, input: &[u8]) -> bool {
         self.values
-            .binary_search(&digest_value::<D>(self.n, self.p, input))
+            .binary_search(&digest_value::<D>(self.n as u64, self.p, input))
             .is_ok()
     }
 
-    /// Get the raw data bytes from a GCS
-    pub fn as_bits(&self) -> BitVec {
-        let mut out = BitVec::new();
+    /// Packs an `UnpackedGcs` into a `Gcs`
+    ///
+    /// This will will reduce the memory footprint, but reduce query
+    /// performance
+    pub fn pack(&self) -> Gcs<D> {
+        let mut values = self.values.clone();
 
         // Sort then calculate differences
-        let mut values = self.values.clone();
         values.sort();
         for i in (1..values.len()).rev() {
             values[i] -= values[i - 1];
         }
 
         // Apply golomb encoding
-        let mut bits = BitVec::<BigEndian>::new();
+        let mut data = BitVec::<BigEndian, u8>::new();
         for val in values {
-            bits.append(&mut golomb_encode(val, self.p))
+            data.append(&mut golomb_encode(val, self.p))
         }
-        out.append(&mut bits);
 
-        out
+        Gcs {
+            n: self.n,
+            p: self.p,
+            data,
+            digest: self.digest,
+        }
+    }
+}
+
+/// A Golomb-coded Set
+pub struct Gcs<D: Digest> {
+    n: usize,
+    p: u8,
+    data: BitVec,
+    digest: PhantomData<D>,
+}
+
+impl<D: Digest> Gcs<D> {
+    /// Read a packed `Gcs` from any Reader
+    pub fn from_reader<R: Read>(reader: &mut R, n: usize, p: u8) -> Fallible<Self> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+
+        Ok(Self {
+            n, 
+            p,
+            data: BitVec::<BigEndian, u8>::from_vec(buf),
+            digest: PhantomData,
+        })
     }
 
-    /// Get the raw values encoded in the BitVec
-    pub fn values(&self) -> Vec<u64> {
-        self.values.clone()
+    /// Writes a packed `Gcs` to a Writer
+    pub fn write<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
+        writer.write_all(&self.data.clone().into_vec())
+    }
+
+    /// Returns whether or not an input is contained in the set. If false the
+    /// input is definitely not present, if true the input is probably present
+    pub fn contains() -> bool {
+        unimplemented!()
+    }
+
+    /// Unpacks a `Gcs` into an `UnpackedGcs`
+    ///
+    /// This will will reduce the query performance, but improve query
+    /// performance
+    pub fn unpack(&self) -> UnpackedGcs<D> {
+        let mut values = golomb_decode(self.data.iter().peekable(), self.p);
+
+        for i in 1..values.len() {
+            values[i] += values[i - 1];
+        }
+
+        UnpackedGcs {
+            n: self.n,
+            p: self.p,
+            values,
+            digest: self.digest,
+        }
     }
 }
 
