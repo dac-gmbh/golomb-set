@@ -14,18 +14,23 @@ A GCS is a probabilistic data structure which is typically smaller than a bloom 
 ## Example
 
 ```rust
-use golomb_set::GcsBuilder;
+use golomb_set::UnpackedGcs;
 use md5::Md5;
 
 // Create a GCS where when 3 items are stored in the set, the
 // probability of a false positive will be 1/2^5
-let mut builder = GcsBuilder::<Md5>::new(3, 5);
+let mut gcs = UnpackedGcs::<Md5>::new(3, 5);
 
 // Insert the MD5 hashes of "alpha" and "bravo"
-builder.insert_unchecked(b"alpha");
-builder.insert_unchecked(b"bravo");
+gcs.insert(b"alpha");
+gcs.insert(b"bravo");
 
-let gcs = builder.build();
+assert!(gcs.contains(b"alpha"));
+assert!(gcs.contains(b"bravo"));
+assert!(!gcs.contains(b"charlie"));
+
+// Reduces memory footprint in exchange for slower querying
+let gcs = gcs.pack();
 
 assert!(gcs.contains(b"alpha"));
 assert!(gcs.contains(b"bravo"));
