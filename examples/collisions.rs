@@ -1,5 +1,5 @@
 use {
-    golomb_set::GcsBuilder,
+    golomb_set::UnpackedGcs,
     rand_core::{RngCore, SeedableRng},
     rand_xorshift::XorShiftRng,
     twox_hash::XxHash,
@@ -8,13 +8,15 @@ use {
 const COUNT: usize = 10000;
 
 fn main() {
-    let mut gcs = GcsBuilder::<XxHash>::new(std::u16::MAX.into(), 3);
-    for a in 0..255 {
-        for b in 0..255 {
-            gcs.insert_unchecked(&[a, b]);
+    let gcs = {
+        let mut gcs = UnpackedGcs::<XxHash>::new(std::u16::MAX.into(), 3);
+        for a in 0..255 {
+            for b in 0..255 {
+                gcs.insert(&[a, b]).unwrap();
+            }
         }
-    }
-    let gcs = gcs.build();
+        gcs
+    };
 
     // Expected false probability of 12.5%
     let mut prng = XorShiftRng::seed_from_u64(0);

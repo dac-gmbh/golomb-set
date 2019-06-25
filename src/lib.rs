@@ -12,18 +12,23 @@
 //! ## Example
 //!
 //! ```rust
-//! use golomb_set::GcsBuilder;
+//! use golomb_set::UnpackedGcs;
 //! use md5::Md5;
 //!
 //! // Create a GCS where when 3 items are stored in the set, the
 //! // probability of a false positive will be 1/2^5
-//! let mut builder = GcsBuilder::<Md5>::new(3, 5);
+//! let mut gcs = UnpackedGcs::<Md5>::new(3, 5);
 //!
 //! // Insert the MD5 hashes of "alpha" and "bravo"
-//! builder.insert_unchecked(b"alpha");
-//! builder.insert_unchecked(b"bravo");
+//! gcs.insert(b"alpha");
+//! gcs.insert(b"bravo");
 //!
-//! let gcs = builder.build();
+//! assert!(gcs.contains(b"alpha"));
+//! assert!(gcs.contains(b"bravo"));
+//! assert!(!gcs.contains(b"charlie"));
+//!
+//! // Reduces memory footprint in exchange for slower querying
+//! let gcs = gcs.pack();
 //!
 //! assert!(gcs.contains(b"alpha"));
 //! assert!(gcs.contains(b"bravo"));
@@ -57,7 +62,7 @@ enum GcsError {
 }
 
 /// Builder for a GCS
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnpackedGcs<D: Digest> {
     n: usize,
     p: u8,
@@ -81,23 +86,6 @@ impl<D: Digest> UnpackedGcs<D> {
     /// # Errors
     /// * If there is an error reading data from `reader`.
     /// * If more than `n` items have been inserted.
-    /// ```no_run
-    /// use std::{fs::{self, File}, io::Read};
-    ///
-    /// use golomb_set::GcsBuilder;
-    /// use sha1::Sha1;
-    ///
-    /// let path = "src/lib.rs";
-    ///
-    /// let mut builder = GcsBuilder::<Sha1>::new(3, 5);
-    /// builder.insert_from_reader(File::open(path)?);
-    ///
-    /// let gcs = builder.build();
-    ///
-    /// assert!(gcs.contains(&fs::read(path)?));
-    ///
-    ///# Ok::<_, std::io::Error>(())
-    /// ```
     pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Fallible<()> {
         let mut vec = Vec::new();
         reader.read_exact(&mut vec)?;
@@ -109,6 +97,7 @@ impl<D: Digest> UnpackedGcs<D> {
         if self.values.len() < self.n {
             self.values
                 .push(digest_value::<D>(self.n as u64, self.p, input.as_ref()));
+            self.values.sort();
             Ok(())
         } else {
             Err(GcsError::LimitReached.into())
@@ -117,9 +106,9 @@ impl<D: Digest> UnpackedGcs<D> {
 
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
-    pub fn contains(&self, input: &[u8]) -> bool {
+    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> bool {
         self.values
-            .binary_search(&digest_value::<D>(self.n as u64, self.p, input))
+            .binary_search(&digest_value::<D>(self.n as u64, self.p, input.as_ref()))
             .is_ok()
     }
 
@@ -152,6 +141,7 @@ impl<D: Digest> UnpackedGcs<D> {
 }
 
 /// A Golomb-coded Set
+#[derive(Clone, Debug, PartialEq)]
 pub struct Gcs<D: Digest> {
     n: usize,
     p: u8,
@@ -166,7 +156,7 @@ impl<D: Digest> Gcs<D> {
         reader.read_to_end(&mut buf)?;
 
         Ok(Self {
-            n, 
+            n,
             p,
             data: BitVec::<BigEndian, u8>::from_vec(buf),
             digest: PhantomData,
@@ -180,8 +170,8 @@ impl<D: Digest> Gcs<D> {
 
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
-    pub fn contains() -> bool {
-        unimplemented!()
+    pub fn contains<A: AsRef<[u8]>>(&self, _input: A) -> bool {
+        false
     }
 
     /// Unpacks a `Gcs` into an `UnpackedGcs`
@@ -189,11 +179,22 @@ impl<D: Digest> Gcs<D> {
     /// This will will reduce the query performance, but improve query
     /// performance
     pub fn unpack(&self) -> UnpackedGcs<D> {
-        let mut values = golomb_decode(self.data.iter().peekable(), self.p);
+        let mut values = {
+            let mut iter = self.data.iter().peekable();
+            let mut values = Vec::new();
+
+            while let Some(_) = iter.peek() {
+                values.push(golomb_decode(&mut iter, self.p));
+            }
+
+            values
+        };
 
         for i in 1..values.len() {
             values[i] += values[i - 1];
         }
+
+        values.sort();
 
         UnpackedGcs {
             n: self.n,
@@ -233,35 +234,28 @@ fn golomb_encode(n: u64, p: u8) -> BitVec {
 }
 
 /// Perform Golomb-Rice decoding of n, with modulus 2^p
-fn golomb_decode<I>(iter: I, p: u8) -> Vec<u64>
+fn golomb_decode<I>(iter: &mut I, p: u8) -> u64
 where
     I: Iterator<Item = bool>,
 {
-    let mut out = Vec::<u64>::new();
-    let mut iter = iter.peekable();
-
-    while let Some(_) = iter.peek() {
-        // parse unary encoded quotient
-        let mut quo = 0u64;
-        while iter.next().unwrap() {
-            quo += 1;
-        }
-
-        // parse binary encoded remainder
-        let mut rem = 0u64;
-        for _ in 0..p {
-            if iter.next().unwrap() {
-                rem += 1;
-            }
-            rem <<= 1;
-        }
-        rem >>= 1;
-
-        // push quo * p + rem
-        out.push(quo * 2u64.pow(u32::from(p)) + rem);
+    // parse unary encoded quotient
+    let mut quo = 0u64;
+    while iter.next().unwrap() {
+        quo += 1;
     }
 
-    out
+    // parse binary encoded remainder
+    let mut rem = 0u64;
+    for _ in 0..p {
+        if iter.next().unwrap() {
+            rem += 1;
+        }
+        rem <<= 1;
+    }
+    rem >>= 1;
+
+    // push quo * p + rem
+    quo * 2u64.pow(u32::from(p)) + rem
 }
 
 fn digest_value<D: Digest>(n: u64, p: u8, input: &[u8]) -> u64 {
@@ -282,14 +276,26 @@ fn digest_value<D: Digest>(n: u64, p: u8, input: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use proptest::prelude::*;
+    use {super::*, proptest::prelude::*, twox_hash::XxHash};
 
     proptest! {
         // Ranges need to be extended after improving performance
         #[test]
         fn golomb_single(n in 0u64..100000u64, p in 2u8..16) {
-            assert_eq!(n, golomb_decode(golomb_encode(n, p).iter().peekable(), p)[0]);
+            assert_eq!(n, golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p));
+        }
+
+        // Tests the packing/unpacking roundtrip
+        #[test]
+        fn pack_roundtrip(n in 0usize..100000usize, p in 2u8..16, data: Vec<Vec<u8>>) {
+            if n >= data.len() {
+                let mut gcs = UnpackedGcs::<XxHash>::new(n, p);
+                for elem in data {
+                    gcs.insert(elem).unwrap();
+                }
+
+                assert_eq!(gcs, gcs.pack().unpack());
+            }
         }
     }
 }

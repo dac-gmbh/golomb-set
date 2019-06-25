@@ -1,5 +1,5 @@
 use {
-    golomb_set::GcsBuilder,
+    golomb_set::UnpackedGcs,
     rand_core::{RngCore, SeedableRng},
     rand_xorshift::XorShiftRng,
     twox_hash::XxHash,
@@ -22,15 +22,18 @@ fn main() {
 
     // GCS
     {
-        let mut gcs = GcsBuilder::<XxHash>::new(NUM_ITEMS as u64, 7);
+        let mut gcs = UnpackedGcs::<XxHash>::new(NUM_ITEMS, 7);
         let mut prng = XorShiftRng::seed_from_u64(0);
         for _ in 0..NUM_ITEMS {
             let mut buf = [0u8; 32];
             prng.fill_bytes(&mut buf);
-            gcs.insert_unchecked(&buf);
+            gcs.insert(&buf).unwrap();
         }
 
-        println!("GCS: {:?} bytes", gcs.build().as_bits().len() / 8);
+        let mut gcs_buf = Vec::new();
+        gcs.pack().write(&mut gcs_buf).unwrap();
+
+        println!("GCS: {:?} bytes", gcs_buf.len());
     }
 
     // Theoretical minimum
