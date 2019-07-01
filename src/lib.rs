@@ -71,8 +71,8 @@ pub struct UnpackedGcs<D: Digest> {
 }
 
 impl<D: Digest> UnpackedGcs<D> {
-    /// Creates a new UnpackedGcs from n and p, where 1/2^p is the probability
-    /// of a false positive when n items have been inserted into the set
+    /// Creates a new `UnpackedGcs` from `n` and `p`, where `1/2^p` is the probability
+    /// of a false positive when n items have been inserted into the set.
     pub fn new(n: usize, p: u8) -> Self {
         Self {
             n,
@@ -171,7 +171,7 @@ impl<D: Digest> Gcs<D> {
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
     pub fn contains<A: AsRef<[u8]>>(&self, _input: A) -> bool {
-        false
+        unimplemented!()
     }
 
     /// Unpacks a `Gcs` into an `UnpackedGcs`
@@ -183,7 +183,7 @@ impl<D: Digest> Gcs<D> {
             let mut iter = self.data.iter().peekable();
             let mut values = Vec::new();
 
-            while let Some(_) = iter.peek() {
+            while iter.peek().is_some() {
                 values.push(golomb_decode(&mut iter, self.p));
             }
 
@@ -239,10 +239,7 @@ where
     I: Iterator<Item = bool>,
 {
     // parse unary encoded quotient
-    let mut quo = 0u64;
-    while iter.next().unwrap() {
-        quo += 1;
-    }
+    let quo = iter.take_while(|i| *i).count() as u64;
 
     // parse binary encoded remainder
     let mut rem = 0u64;
@@ -282,20 +279,24 @@ mod tests {
         // Ranges need to be extended after improving performance
         #[test]
         fn golomb_single(n in 0u64..100000u64, p in 2u8..16) {
-            assert_eq!(n, golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p));
+            assert_eq!(
+                n,
+                golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p)
+            );
         }
-
         // Tests the packing/unpacking roundtrip
         #[test]
         fn pack_roundtrip(n in 0usize..100000usize, p in 2u8..16, data: Vec<Vec<u8>>) {
-            if n >= data.len() {
-                let mut gcs = UnpackedGcs::<XxHash>::new(n, p);
-                for elem in data {
-                    gcs.insert(elem).unwrap();
-                }
-
-                assert_eq!(gcs, gcs.pack().unpack());
+            if n < data.len() {
+                return Ok(());
             }
+
+            let mut gcs = UnpackedGcs::<XxHash>::new(n, p);
+            for elem in data {
+                gcs.insert(elem).unwrap();
+            }
+
+            assert_eq!(gcs, gcs.pack().unpack());
         }
     }
 }
