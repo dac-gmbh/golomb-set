@@ -114,7 +114,7 @@ impl<D: Digest> UnpackedGcs<D> {
 
     /// Packs an `UnpackedGcs` into a `Gcs`
     ///
-    /// This will will reduce the memory footprint, but reduce query
+    /// This will will reduce the memory footprint, but also reduce query
     /// performance
     pub fn pack(&self) -> Gcs<D> {
         let mut values = self.values.clone();
@@ -170,14 +170,30 @@ impl<D: Digest> Gcs<D> {
 
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
-    pub fn contains<A: AsRef<[u8]>>(&self, _input: A) -> bool {
-        unimplemented!()
+    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> bool {
+        let input = digest_value::<D>(self.n as u64, self.p, input.as_ref());
+
+        let mut iter = self.data.iter().peekable();
+
+        let mut last = 0;
+
+        while iter.peek().is_some() {
+            let decoded = golomb_decode(&mut iter, self.p);
+
+            if input == (decoded + last) {
+                return true;
+            } else {
+                last += decoded;
+            }
+        }
+
+        false
     }
 
     /// Unpacks a `Gcs` into an `UnpackedGcs`
     ///
-    /// This will will reduce the query performance, but improve query
-    /// performance
+    /// This will will increase query performance, but also increase the memory
+    /// footprint
     pub fn unpack(&self) -> UnpackedGcs<D> {
         let mut values = {
             let mut iter = self.data.iter().peekable();
@@ -273,7 +289,7 @@ fn digest_value<D: Digest>(n: u64, p: u8, input: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, proptest::prelude::*, twox_hash::XxHash};
+    use {super::*, proptest::prelude::*};
 
     proptest! {
         // Ranges need to be extended after improving performance
@@ -283,20 +299,6 @@ mod tests {
                 n,
                 golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p)
             );
-        }
-        // Tests the packing/unpacking roundtrip
-        #[test]
-        fn pack_roundtrip(n in 0usize..100000usize, p in 2u8..16, data: Vec<Vec<u8>>) {
-            if n < data.len() {
-                return Ok(());
-            }
-
-            let mut gcs = UnpackedGcs::<XxHash>::new(n, p);
-            for elem in data {
-                gcs.insert(elem).unwrap();
-            }
-
-            assert_eq!(gcs, gcs.pack().unpack());
         }
     }
 }
