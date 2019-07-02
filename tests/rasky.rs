@@ -87,9 +87,8 @@ fn uuids_1000_creation() {
     assert_eq!(gcs_buf, &include_bytes!("../data/v4_uuids.py.gcs")[..]);
 }
 
-/*
 #[test]
-fn uuids_short_query() {
+fn uuids_short_query_unpacked() {
     let gcs = {
         let mut unpacked = UnpackedGcs::<Md5Trunc>::new(5, 10);
 
@@ -112,15 +111,13 @@ fn uuids_short_query() {
         assert!(gcs.contains(l.as_bytes()))
     }
 }
-*/
 
-/*
 #[test]
-fn uuids_1000_query() {
+fn uuids_1000_query_unpacked() {
     let gcs = {
-        let mut unpacked = UnpackedGcs::<Md5Trunc>::new(5, 10);
+        let mut unpacked = UnpackedGcs::<Md5Trunc>::new(1000, 10);
 
-        let f = File::open("../data/v4_uuids~.txt").unwrap();
+        let f = File::open("data/v4_uuids.txt").unwrap();
         let file = BufReader::new(&f);
 
         for line in file.lines() {
@@ -131,7 +128,7 @@ fn uuids_1000_query() {
         unpacked
     };
 
-    let f = File::open("../data/v4_uuids.txt").unwrap();
+    let f = File::open("data/v4_uuids.txt").unwrap();
     let file = BufReader::new(&f);
 
     for line in file.lines() {
@@ -139,4 +136,53 @@ fn uuids_1000_query() {
         assert!(gcs.contains(l.as_bytes()))
     }
 }
-*/
+
+#[test]
+fn uuids_short_query_packed() {
+    let gcs = {
+        let mut unpacked = UnpackedGcs::<Md5Trunc>::new(5, 10);
+
+        let f = File::open("data/v4_uuids_short.txt").unwrap();
+        let file = BufReader::new(&f);
+
+        for line in file.lines() {
+            let l = line.unwrap();
+            unpacked.insert(l.as_bytes()).unwrap();
+        }
+
+        unpacked.pack()
+    };
+
+    let f = File::open("data/v4_uuids_short.txt").unwrap();
+    let file = BufReader::new(&f);
+
+    for line in file.lines() {
+        let l = line.unwrap();
+        assert!(gcs.contains(l.as_bytes()))
+    }
+}
+
+#[test]
+fn uuids_1000_query_packed() {
+    let gcs = {
+        let mut unpacked = UnpackedGcs::<Md5Trunc>::new(1000, 10);
+
+        let f = File::open("data/v4_uuids.txt").unwrap();
+        let file = BufReader::new(&f);
+
+        for line in file.lines() {
+            let l = line.unwrap();
+            unpacked.insert(l.as_bytes()).unwrap();
+        }
+
+        unpacked.pack()
+    };
+
+    let f = File::open("data/v4_uuids.txt").unwrap();
+    let file = BufReader::new(&f);
+
+    for line in file.lines() {
+        let l = line.unwrap();
+        assert!(gcs.contains(l.as_bytes()))
+    }
+}
