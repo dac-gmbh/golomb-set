@@ -158,7 +158,7 @@ fn uuids_short_query_packed() {
 
     for line in file.lines() {
         let l = line.unwrap();
-        assert!(gcs.contains(l.as_bytes()))
+        assert!(gcs.contains(l.as_bytes()).unwrap())
     }
 }
 
@@ -183,6 +183,6 @@ fn uuids_1000_query_packed() {
 
     for line in file.lines() {
         let l = line.unwrap();
-        assert!(gcs.contains(l.as_bytes()))
+        assert!(gcs.contains(l.as_bytes()).unwrap())
     }
 }

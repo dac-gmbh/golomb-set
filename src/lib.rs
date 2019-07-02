@@ -30,9 +30,9 @@
 //! // Reduces memory footprint in exchange for slower querying
 //! let gcs = gcs.pack();
 //!
-//! assert!(gcs.contains(b"alpha"));
-//! assert!(gcs.contains(b"bravo"));
-//! assert!(!gcs.contains(b"charlie"));
+//! assert!(gcs.contains(b"alpha").unwrap());
+//! assert!(gcs.contains(b"bravo").unwrap());
+//! assert!(!gcs.contains(b"charlie").unwrap());
 //! ```
 
 #![deny(missing_docs)]
@@ -59,6 +59,8 @@ use {
 enum GcsError {
     #[fail(display = "The limit for the number of elements has been reached")]
     LimitReached,
+    #[fail(display = "Decoding failed to invalid Golomb-Rice bit sequence")]
+    DecodeError,
 }
 
 /// Builder for a GCS
@@ -170,7 +172,7 @@ impl<D: Digest> Gcs<D> {
 
     /// Returns whether or not an input is contained in the set. If false the
     /// input is definitely not present, if true the input is probably present
-    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> bool {
+    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> Fallible<bool> {
         let input = digest_value::<D>(self.n as u64, self.p, input.as_ref());
 
         let mut iter = self.data.iter().peekable();
@@ -178,29 +180,29 @@ impl<D: Digest> Gcs<D> {
         let mut last = 0;
 
         while iter.peek().is_some() {
-            let decoded = golomb_decode(&mut iter, self.p);
+            let decoded = golomb_decode(&mut iter, self.p)?;
 
             if input == (decoded + last) {
-                return true;
+                return Ok(true);
             } else {
                 last += decoded;
             }
         }
 
-        false
+        Ok(false)
     }
 
     /// Unpacks a `Gcs` into an `UnpackedGcs`
     ///
     /// This will will increase query performance, but also increase the memory
     /// footprint
-    pub fn unpack(&self) -> UnpackedGcs<D> {
+    pub fn unpack(&self) -> Fallible<UnpackedGcs<D>> {
         let mut values = {
             let mut iter = self.data.iter().peekable();
             let mut values = Vec::new();
 
             while iter.peek().is_some() {
-                values.push(golomb_decode(&mut iter, self.p));
+                values.push(golomb_decode(&mut iter, self.p)?);
             }
 
             values
@@ -212,12 +214,12 @@ impl<D: Digest> Gcs<D> {
 
         values.sort();
 
-        UnpackedGcs {
+        Ok(UnpackedGcs {
             n: self.n,
             p: self.p,
             values,
             digest: self.digest,
-        }
+        })
     }
 }
 
@@ -250,7 +252,7 @@ fn golomb_encode(n: u64, p: u8) -> BitVec {
 }
 
 /// Perform Golomb-Rice decoding of n, with modulus 2^p
-fn golomb_decode<I>(iter: &mut I, p: u8) -> u64
+fn golomb_decode<I>(iter: &mut I, p: u8) -> Fallible<u64>
 where
     I: Iterator<Item = bool>,
 {
@@ -260,15 +262,24 @@ where
     // parse binary encoded remainder
     let mut rem = 0u64;
     for _ in 0..p {
-        if iter.next().unwrap() {
-            rem += 1;
+        match iter.next() {
+            Some(true) => {
+                rem += 1;
+            }
+
+            Some(false) => {}
+
+            None => {
+                return Err(GcsError::DecodeError.into());
+            }
         }
+
         rem <<= 1;
     }
     rem >>= 1;
 
     // push quo * p + rem
-    quo * 2u64.pow(u32::from(p)) + rem
+    Ok(quo * 2u64.pow(u32::from(p)) + rem)
 }
 
 fn digest_value<D: Digest>(n: u64, p: u8, input: &[u8]) -> u64 {
@@ -297,7 +308,7 @@ mod tests {
         fn golomb_single(n in 0u64..100000u64, p in 2u8..16) {
             assert_eq!(
                 n,
-                golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p)
+                golomb_decode(&mut golomb_encode(n, p).iter().peekable(), p).unwrap()
             );
         }
     }
