@@ -32,7 +32,7 @@ fn insert_packed(c: &mut Criterion) {
         b.iter(|| {
             let mut buf = [0u8; 128];
             rng.fill_bytes(&mut buf);
-            let mut unpacked = packed.clone().unpack();
+            let mut unpacked = packed.clone().unpack().unwrap();
             unpacked.insert(&buf[..]).unwrap();
             let _packed = unpacked.pack();
         })

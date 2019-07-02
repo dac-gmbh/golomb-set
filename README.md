@@ -32,7 +32,7 @@ assert!(!gcs.contains(b"charlie"));
 // Reduces memory footprint in exchange for slower querying
 let gcs = gcs.pack();
 
-assert!(gcs.contains(b"alpha"));
-assert!(gcs.contains(b"bravo"));
-assert!(!gcs.contains(b"charlie"));
+assert!(gcs.contains(b"alpha").unwrap());
+assert!(gcs.contains(b"bravo").unwrap());
+assert!(!gcs.contains(b"charlie").unwrap());
 ```
