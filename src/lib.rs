@@ -1,22 +1,21 @@
-//! Giovanni Bajo's blog post as well as their Python and C++ implementations were a huge help
-//! when writing this library, found
-//! [here](http://giovanni.bajo.it/post/47119962313/golomb-coded-sets-smaller-than-bloom-filters)
-//! and [here](https://github.com/rasky/gcs) respectively.
-//!
-//! A GCS is a probabilistic data structure which is typically smaller than a bloom filter but
+//! A Golomb Coded Set is a probabilistic data structure which is typically smaller than a bloom filter but
 //! slower to query. A sorted list of differences between samples of a random distribution will
 //! roughly have a geometric distribution, which makes for an optimal prefix for Golomb coding.
 //! Since a good hash will be randomly distributed, this encoding makes for efficient storage of
 //! hashed values.
 //!
+//! Giovanni Bajo's blog post as well as their Python and C++ implementations were a huge help
+//! when writing this library, found
+//! [here](http://giovanni.bajo.it/post/47119962313/golomb-coded-sets-smaller-than-bloom-filters)
+//! and [here](https://github.com/rasky/gcs) respectively.
+//!
 //! ## Example
 //!
 //! ```rust
-//! use golomb_set::UnpackedGcs;
-//! use md5::Md5;
+//! use {golomb_set::UnpackedGcs, md5::Md5};
 //!
 //! // Create a GCS where when 3 items are stored in the set, the
-//! // probability of a false positive will be 1/2^5
+//! // probability of a false positive will be `1/(2^5)`, or 3.1%
 //! let mut gcs = UnpackedGcs::<Md5>::new(3, 5);
 //!
 //! // Insert the MD5 hashes of "alpha" and "bravo"
@@ -55,15 +54,20 @@ use {
     },
 };
 
+/// Errors that may occur when handling Golomb Coded Sets.
 #[derive(Debug, Fail)]
-enum GcsError {
-    #[fail(display = "The limit for the number of elements has been reached")]
+pub enum GcsError {
+    /// Returned when attempting to insert an additional element into an
+    /// already full Golomb Coded Set.
+    #[fail(display = "Limit for the number of elements has been reached")]
     LimitReached,
-    #[fail(display = "Decoding failed to invalid Golomb-Rice bit sequence")]
+    /// The Golomb-Rice encoded sequence of bits could not be decoded, returned
+    /// when unpacking or calling the `contains` method on a a packed GCS.
+    #[fail(display = "Decoding failed due to invalid Golomb-Rice bit sequence")]
     DecodeError,
 }
 
-/// Builder for a GCS
+/// An unpacked Golomb Coded Set.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnpackedGcs<D: Digest> {
     n: usize,
@@ -85,6 +89,7 @@ impl<D: Digest> UnpackedGcs<D> {
     }
 
     /// Copies data from the reader and inserts into into the set.
+    ///
     /// # Errors
     /// * If there is an error reading data from `reader`.
     /// * If more than `n` items have been inserted.
@@ -94,7 +99,10 @@ impl<D: Digest> UnpackedGcs<D> {
         self.insert(&vec)
     }
 
-    /// Adds an entry to the set, and returns an error if more than N items are added
+    /// Adds an entry to the set, and returns an error if more than N items are added.
+    ///
+    /// # Errors
+    /// * If more than `n` items have been inserted.
     pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Fallible<()> {
         if self.values.len() < self.n {
             self.values
@@ -107,17 +115,17 @@ impl<D: Digest> UnpackedGcs<D> {
     }
 
     /// Returns whether or not an input is contained in the set. If false the
-    /// input is definitely not present, if true the input is probably present
+    /// input is definitely not present, if true the input is probably present.
     pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> bool {
         self.values
             .binary_search(&digest_value::<D>(self.n as u64, self.p, input.as_ref()))
             .is_ok()
     }
 
-    /// Packs an `UnpackedGcs` into a `Gcs`
+    /// Packs an `UnpackedGcs` into a `Gcs`.
     ///
     /// This will will reduce the memory footprint, but also reduce query
-    /// performance
+    /// performance.
     pub fn pack(&self) -> Gcs<D> {
         let mut values = self.values.clone();
 
@@ -142,7 +150,7 @@ impl<D: Digest> UnpackedGcs<D> {
     }
 }
 
-/// A Golomb-coded Set
+/// A packed Golomb-coded Set.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Gcs<D: Digest> {
     n: usize,
@@ -152,7 +160,10 @@ pub struct Gcs<D: Digest> {
 }
 
 impl<D: Digest> Gcs<D> {
-    /// Read a packed `Gcs` from any Reader
+    /// Read a packed `Gcs` from any Reader.
+    ///
+    /// # Errors
+    /// * If there is an error reading data from `reader`.
     pub fn from_reader<R: Read>(reader: &mut R, n: usize, p: u8) -> Fallible<Self> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
@@ -165,13 +176,19 @@ impl<D: Digest> Gcs<D> {
         })
     }
 
-    /// Writes a packed `Gcs` to a Writer
+    /// Writes a packed `Gcs` to a Writer.
+    ///
+    /// # Errors
+    /// * If there is an error writing data to `writer`.
     pub fn write<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
         writer.write_all(&self.data.clone().into_vec())
     }
 
     /// Returns whether or not an input is contained in the set. If false the
-    /// input is definitely not present, if true the input is probably present
+    /// input is definitely not present, if true the input is probably present.
+    ///
+    /// # Errors
+    /// * If the inner data is not a valid Golomb-Rice encoding.
     pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> Fallible<bool> {
         let input = digest_value::<D>(self.n as u64, self.p, input.as_ref());
 
@@ -192,10 +209,13 @@ impl<D: Digest> Gcs<D> {
         Ok(false)
     }
 
-    /// Unpacks a `Gcs` into an `UnpackedGcs`
+    /// Unpacks a `Gcs` into an `UnpackedGcs`.
     ///
     /// This will will increase query performance, but also increase the memory
-    /// footprint
+    /// footprint.
+    ///
+    /// # Errors
+    /// * If the inner data is not a valid Golomb-Rice encoding.
     pub fn unpack(&self) -> Fallible<UnpackedGcs<D>> {
         let mut values = {
             let mut iter = self.data.iter().peekable();
@@ -223,11 +243,10 @@ impl<D: Digest> Gcs<D> {
     }
 }
 
-/// Perform Golomb-Rice encoding of n, with modulus 2^p
+/// Perform Golomb-Rice encoding of n, with modulus 2^p.
 ///
 /// # Panics
-///
-/// Panics if `p == 0`.
+/// * Panics if `p == 0`.
 fn golomb_encode(n: u64, p: u8) -> BitVec {
     if p == 0 {
         panic!("p cannot be 0");
@@ -251,7 +270,10 @@ fn golomb_encode(n: u64, p: u8) -> BitVec {
     out
 }
 
-/// Perform Golomb-Rice decoding of n, with modulus 2^p
+/// Perform Golomb-Rice decoding of n, with modulus 2^p.
+///
+/// # Errors
+/// * If `iter` is not a valid Golomb-Rice encoding
 fn golomb_decode<I>(iter: &mut I, p: u8) -> Fallible<u64>
 where
     I: Iterator<Item = bool>,
