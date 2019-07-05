@@ -11,6 +11,12 @@ A GCS is a probabilistic data structure which is typically smaller than a bloom 
 
 Giovanni Bajo's blog post as well as their Python and C++ implementations were a huge help when writing this library, found [here](http://giovanni.bajo.it/post/47119962313/golomb-coded-sets-smaller-than-bloom-filters) and [here](https://github.com/rasky/gcs) respectively.
 
+## Usage and Behaviour
+
+There are 3 main parameters to select when creating a Golomb Coded Set: the hasher to use, `N` and `P`. `N` should be the maximum number of elements that will be inserted into the set, and 1 / 2 ^ `P` is the desired probability of a false positive when the set is full. If fewer items have been inserted the real probability will be significantly lower.
+
+When selecting a hash it is important to keep in mind it does not have to be cryptographically secure, only evenly distributed. The length must also be greater than `N` * 2 ^ `P`, but this is an easy requirement to meet (even CRC32 would be suitable for a million elements and a false positive probability of 0.001%).
+
 ## Example
 
 ```rust
