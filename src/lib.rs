@@ -45,9 +45,9 @@
 //! // Reduces memory footprint in exchange for slower querying
 //! let gcs = gcs.pack();
 //!
-//! assert!(gcs.contains(b"alpha").unwrap());
-//! assert!(gcs.contains(b"bravo").unwrap());
-//! assert!(!gcs.contains(b"charlie").unwrap());
+//! assert!(gcs.contains(b"alpha"));
+//! assert!(gcs.contains(b"bravo"));
+//! assert!(!gcs.contains(b"charlie"));
 //! ```
 
 #![deny(missing_docs)]
@@ -180,14 +180,21 @@ impl<D: Digest> Gcs<D> {
     ///
     /// # Errors
     /// * If there is an error reading data from `reader`.
+    /// * If the read data is not a valid Golomb-Rice encoding.
     pub fn from_reader<R: Read>(reader: &mut R, n: usize, p: u8) -> Fallible<Self> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
+        let data = BitVec::<BigEndian, u8>::from_vec(buf);
+
+        let mut iter = data.iter().peekable();
+        while iter.peek().is_some() {
+            golomb_decode(&mut iter, p)?;
+        }
 
         Ok(Self {
             n,
             p,
-            data: BitVec::<BigEndian, u8>::from_vec(buf),
+            data,
             digest: PhantomData,
         })
     }
@@ -205,7 +212,7 @@ impl<D: Digest> Gcs<D> {
     ///
     /// # Errors
     /// * If the inner data is not a valid Golomb-Rice encoding.
-    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> Fallible<bool> {
+    pub fn contains<A: AsRef<[u8]>>(&self, input: A) -> bool {
         let input = digest_value::<D>(self.n as u64, self.p, input.as_ref());
 
         let mut iter = self.data.iter().peekable();
@@ -213,16 +220,17 @@ impl<D: Digest> Gcs<D> {
         let mut last = 0;
 
         while iter.peek().is_some() {
-            let decoded = golomb_decode(&mut iter, self.p)?;
+            // This should never happen because data is checked on creation
+            let decoded = golomb_decode(&mut iter, self.p).expect("Golomb decoding failed");
 
             if input == (decoded + last) {
-                return Ok(true);
+                return true;
             } else {
                 last += decoded;
             }
         }
 
-        Ok(false)
+        false
     }
 
     /// Unpacks a `Gcs` into an `UnpackedGcs`.
@@ -232,13 +240,14 @@ impl<D: Digest> Gcs<D> {
     ///
     /// # Errors
     /// * If the inner data is not a valid Golomb-Rice encoding.
-    pub fn unpack(&self) -> Fallible<UnpackedGcs<D>> {
+    pub fn unpack(&self) -> UnpackedGcs<D> {
         let mut values = {
             let mut iter = self.data.iter().peekable();
             let mut values = Vec::new();
 
             while iter.peek().is_some() {
-                values.push(golomb_decode(&mut iter, self.p)?);
+                // This should never happen because data is checked on creation
+                values.push(golomb_decode(&mut iter, self.p).expect("Golomb decoding failed"));
             }
 
             values
@@ -250,12 +259,12 @@ impl<D: Digest> Gcs<D> {
 
         values.sort();
 
-        Ok(UnpackedGcs {
+        UnpackedGcs {
             n: self.n,
             p: self.p,
             values,
             digest: self.digest,
-        })
+        }
     }
 }
 

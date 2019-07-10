@@ -28,7 +28,7 @@ fn main() {
     let mut buf = [0u8; 4];
     for _ in 0..TRIES {
         prng.fill_bytes(&mut buf);
-        if gcs.contains(&buf).unwrap() {
+        if gcs.contains(&buf) {
             // None of the values we are trying were inserted, so any present
             // are false positives
             num += 1;
