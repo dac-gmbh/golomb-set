@@ -25,7 +25,7 @@ proptest! {
             unpacked.pack()
         };
 
-        assert!(gcs.contains(&bytes).unwrap());
+        assert!(gcs.contains(&bytes));
     }
 
     #[test]
@@ -53,7 +53,7 @@ proptest! {
             unpacked.pack()
         };
 
-        assert!(!gcs.contains(&b).unwrap());
+        assert!(!gcs.contains(&b));
     }
 
     // Tests the packing/unpacking roundtrip
@@ -68,6 +68,6 @@ proptest! {
             gcs.insert(elem).unwrap();
         }
 
-        assert_eq!(gcs, gcs.pack().unpack().unwrap());
+        assert_eq!(gcs, gcs.pack().unpack());
     }
 }
