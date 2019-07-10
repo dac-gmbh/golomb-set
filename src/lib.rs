@@ -62,7 +62,6 @@ use {
     },
     byteorder::ByteOrder,
     digest::Digest,
-    failure::Fallible,
     num_integer::div_rem,
     std::{
         io::{self, Read, Write},
@@ -72,7 +71,7 @@ use {
 
 /// Errors that may occur when handling Golomb Coded Sets.
 #[derive(Debug, Fail)]
-pub enum GcsError {
+pub enum Error {
     /// Returned when attempting to insert an additional element into an
     /// already full Golomb Coded Set.
     #[fail(display = "Limit for the number of elements has been reached")]
@@ -80,7 +79,16 @@ pub enum GcsError {
     /// The Golomb-Rice encoded sequence of bits could not be decoded, returned
     /// when unpacking or calling the `contains` method on a a packed GCS.
     #[fail(display = "Decoding failed due to invalid Golomb-Rice bit sequence")]
-    DecodeError,
+    Decode,
+    /// todo
+    #[fail(display = "IO error: {}", _0)]
+    Io(io::Error),
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::Io(err)
+    }
 }
 
 /// An unpacked Golomb Coded Set.
@@ -109,7 +117,7 @@ impl<D: Digest> UnpackedGcs<D> {
     /// # Errors
     /// * If there is an error reading data from `reader`.
     /// * If more than `n` items have been inserted.
-    pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Fallible<()> {
+    pub fn insert_from_reader<R: Read>(&mut self, mut reader: R) -> Result<(), Error> {
         let mut vec = Vec::new();
         reader.read_exact(&mut vec)?;
         self.insert(&vec)
@@ -119,14 +127,14 @@ impl<D: Digest> UnpackedGcs<D> {
     ///
     /// # Errors
     /// * If more than `n` items have been inserted.
-    pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Fallible<()> {
+    pub fn insert<A: AsRef<[u8]>>(&mut self, input: A) -> Result<(), Error> {
         if self.values.len() < self.n {
             self.values
                 .push(digest_value::<D>(self.n as u64, self.p, input.as_ref()));
             self.values.sort();
             Ok(())
         } else {
-            Err(GcsError::LimitReached.into())
+            Err(Error::LimitReached)
         }
     }
 
@@ -180,8 +188,7 @@ impl<D: Digest> Gcs<D> {
     ///
     /// # Errors
     /// * If there is an error reading data from `reader`.
-    /// * If the read data is not a valid Golomb-Rice encoding.
-    pub fn from_reader<R: Read>(reader: &mut R, n: usize, p: u8) -> Fallible<Self> {
+    pub fn from_reader<R: Read>(reader: &mut R, n: usize, p: u8) -> Result<Self, Error> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
         let data = BitVec::<BigEndian, u8>::from_vec(buf);
@@ -203,8 +210,9 @@ impl<D: Digest> Gcs<D> {
     ///
     /// # Errors
     /// * If there is an error writing data to `writer`.
-    pub fn write<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        writer.write_all(&self.data.clone().into_vec())
+    pub fn write<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
+        writer.write_all(&self.data.clone().into_vec())?;
+        Ok(())
     }
 
     /// Returns whether or not an input is contained in the set. If false the
@@ -299,7 +307,7 @@ fn golomb_encode(n: u64, p: u8) -> BitVec {
 ///
 /// # Errors
 /// * If `iter` is not a valid Golomb-Rice encoding
-fn golomb_decode<I>(iter: &mut I, p: u8) -> Fallible<u64>
+fn golomb_decode<I>(iter: &mut I, p: u8) -> Result<u64, Error>
 where
     I: Iterator<Item = bool>,
 {
@@ -317,7 +325,7 @@ where
             Some(false) => {}
 
             None => {
-                return Err(GcsError::DecodeError.into());
+                return Err(Error::Decode);
             }
         }
 
