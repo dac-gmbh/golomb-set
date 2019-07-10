@@ -1,6 +1,6 @@
 [package]
 name = "golomb-set"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Ferdia McKeogh <ferdia@mckeogh.tech>"]
 description = "A Golomb Coded Set implementation"
 documentation = "https://docs.rs/golomb-set"
